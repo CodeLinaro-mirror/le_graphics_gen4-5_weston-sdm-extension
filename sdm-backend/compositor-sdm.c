@@ -194,6 +194,9 @@ to_drm_output(struct weston_output *base)
 static void
 drm_destroy(struct weston_backend *backend);
 
+static void
+drm_shutdown(struct weston_backend *backend);
+
 static inline struct drm_backend *
 to_drm_backend(struct weston_compositor *base)
 {
@@ -3001,6 +3004,25 @@ udev_drm_event(int fd, uint32_t mask, void *data)
 }
 
 static void
+drm_shutdown(struct weston_backend *backend)
+{
+	struct drm_backend *b = container_of(backend, struct drm_backend, base);
+	struct weston_output *base;
+	struct drm_output *output;
+
+	weston_log("sdm-backend: drm_shutdown: stopping all displays before output destroy\n");
+
+	wl_list_for_each(base, &b->compositor->output_list, link) {
+		output = to_drm_output(base);
+		if (base->enabled && output->dpms != WESTON_DPMS_OFF) {
+			weston_log("sdm-backend: drm_shutdown: turning off display %s (dpms=%d)\n",
+				   base->name, output->dpms);
+			drm_set_dpms(base, WESTON_DPMS_OFF);
+		}
+	}
+}
+
+static void
 drm_destroy(struct weston_backend *backend)
 {
 	struct drm_backend *b = container_of(backend, struct drm_backend, base);
@@ -3577,6 +3599,7 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_launcher;
 	}
 	b->base.destroy = drm_destroy;
+	b->base.shutdown = drm_shutdown;
 	b->base.repaint_begin = drm_repaint_begin;
 	b->base.repaint_flush = drm_repaint_flush;
 	b->base.repaint_cancel = drm_repaint_cancel;
