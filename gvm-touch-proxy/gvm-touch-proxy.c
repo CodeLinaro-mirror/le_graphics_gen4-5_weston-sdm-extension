@@ -1365,6 +1365,12 @@ find_port_by_surface(struct client_state *state, struct wl_surface *surface)
 {
 	int i;
 
+	if (!state) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: find_port_by_surface: NULL state\n");
+		return NULL;
+	}
+
 	for (i = 0; i < state->port_count; i++) {
 		if (state->ports[i].surface == surface)
 			return &state->ports[i];
@@ -2121,6 +2127,12 @@ touch_cancel(void *data, struct wl_touch *wl_touch)
 	struct client_state *state = seat ? seat->state : NULL;
 	int i;
 	(void) wl_touch;
+
+	if (!state) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: touch_cancel: NULL state\n");
+		return;
+	}
 
 	for (i = 0; i < MAX_TOUCH_SLOTS; i++) {
 		struct touch_route *route = &state->touch_routes[i];
@@ -3058,9 +3070,17 @@ xdg_surface_handle_configure(void *data, struct xdg_surface *xdg_surface,
 			      uint32_t serial)
 {
 	PortInfo *port = data;
-	struct client_state *state = port ? port->state_ref : NULL;
+	struct client_state *state = NULL;
 
 	xdg_surface_ack_configure(xdg_surface, serial);
+
+	if (!port) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: xdg_surface configure: NULL port\n");
+		return;
+	}
+
+	state = port->state_ref;
 
 	if (!port->xdg_configured) {
 		port->xdg_configured = true;

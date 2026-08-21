@@ -3610,11 +3610,6 @@ struct full_init_param {
 	const char *seat_id;
 	void (*configure_device)(struct weston_compositor *compositor,
 								 struct libinput_device *device);
-	/*
-	* If early boot is not enabled, need to return
-	* whether full init is done successfully
-	*/
-	bool success;
 };
 
 static void *full_init_main(void *arg) {
@@ -3754,8 +3749,8 @@ static void *full_init_main(void *arg) {
 
 	if (finish_init(b))
 		goto err_udev_input;
-	param->success = true;
-	return NULL;
+	free(param);
+	return b;
 
 err_udev_input:
 	udev_input_destroy(&b->input);
@@ -3774,10 +3769,7 @@ err_sdm_core:
 err_udev:
 	udev_unref(b->udev);
 err_base:
-	if (b->early_boot)
-		free(param);
-	else
-		param->success = false;
+	free(param);
 	return NULL;
 }
 
@@ -3953,12 +3945,9 @@ drm_backend_create(struct weston_compositor *compositor,
 #endif
 	} else {
 		/* If early boot is disabled, do full backend initialization directly. */
-		full_init_main(full_init_param);
-		if (full_init_param->success) {
-			free(full_init_param);
+		if (full_init_main(full_init_param)) {
 			return b;
 		} else {
-			free(full_init_param);
 			wl_list_for_each_safe(base, next, &compositor->head_list, compositor_link) {
 				drm_display_destroy(to_drm_head(base));
 				drm_head_destroy(to_drm_head(base));
