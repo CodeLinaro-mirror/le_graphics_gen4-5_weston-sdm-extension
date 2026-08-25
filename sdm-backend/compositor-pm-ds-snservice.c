@@ -12,7 +12,9 @@
 #include <wayland-server.h>
 #include <libweston/zalloc.h>
 #include <libweston/libweston.h>
+#include <libweston/plugin-registry.h>
 #include "shared/helpers.h"
+#include "sdm-input-control-api.h"
 
 #ifndef EOK
 #define EOK 0
@@ -23,6 +25,17 @@
 #endif
 
 #define PM_DISPLAY_CLIENT_NAME "pm-client-weston"
+
+/*
+ * Fetch the input-control vtable published by the sdm backend via the plugin
+ * registry. Returns NULL if the backend did not register it.
+ */
+static const struct sdm_input_control_api *
+get_input_control_api(struct weston_compositor *compositor)
+{
+	return weston_plugin_api_get(compositor, SDM_INPUT_CONTROL_API_NAME,
+				     sizeof(struct sdm_input_control_api));
+}
 
 enum {
 	EVENT_SUSPEND = 1,
@@ -115,16 +128,22 @@ static void
 snservice_ds_handler(int fd, uint32_t mask, void* data)
 {
 	struct snservice_notifier *notifier = data;
+	const struct sdm_input_control_api *input_ctl =
+		get_input_control_api(notifier->compositor);
 	uint64_t event_type;
 
 	read(fd, &event_type, sizeof(uint64_t));
 	switch (event_type)
 	{
 		case EVENT_SUSPEND:
+			if (input_ctl)
+				input_ctl->suspend_input(notifier->compositor);
 			weston_compositor_sleep(notifier->compositor);
 			weston_log("PM Suspend: weston sleep \n");
 			break;
 		case EVENT_RESUME:
+			if (input_ctl)
+				input_ctl->resume_input(notifier->compositor);
 			weston_compositor_wake(notifier->compositor);
 			weston_log("PM Resume: weston wakeup \n");
 			break;
