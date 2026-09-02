@@ -7,6 +7,7 @@ generated_protocols = [
 	'gbm-buffer-backend',
 	'screen-capture',
 	'pll',
+	'touch-only-surface',
 ]
 
 foreach proto: generated_protocols

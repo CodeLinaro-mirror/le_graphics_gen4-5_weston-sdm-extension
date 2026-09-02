@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+  SPDX-License-Identifier: BSD-3-Clause-Clear
+-->
+<protocol name="touch_only_surface">
+
+  <description summary="mark wl_surface as touch-only">
+    This protocol allows a client to mark wl_surface objects as touch-only.
+
+    A touch-only surface participates in hit testing and receives input
+    events as usual, but the compositor may choose not to composite it
+    into the visible scene. In the Qualcomm SDM backend, a touch-only
+    surface is used as an invisible proxy for virtual machine content:
+    it receives touch events based on its input region, but is not
+    drawn by the renderer.
+  </description>
+
+  <interface name="touch_only_surface" version="1">
+    <request name="set_touch_only">
+      <description summary="set or clear touch-only state for a surface">
+        Mark the given wl_surface as touch-only when enabled != 0, or
+        clear the touch-only state when enabled == 0.
+
+        When a surface is touch-only, it will still be used for input
+        hit testing (according to its input region), but will not be
+        composited by the renderer.
+
+        The behavior for surfaces without an attached buffer is
+        compositor-specific; in the SDM backend this is typically used
+        with proxy surfaces that have dummy buffers and viewport
+        destination set to the VM area.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"
+           summary="the surface to mark as touch-only"/>
+      <arg name="enabled" type="int"
+           summary="non-zero to enable, zero to disable"/>
+    </request>
+  </interface>
+
+</protocol>

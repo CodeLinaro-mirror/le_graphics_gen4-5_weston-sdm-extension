@@ -92,6 +92,8 @@
 #include <libweston-private/launcher-util.h>
 #include <libweston-private/pixman-renderer.h>
 
+#include "touch-only-surface-server-protocol.h"
+
 #include <gbm-buffer-backend.h>
 #include <screen-capture.h>
 #include "../sdm-service/sdm_display_connect.h"
@@ -178,6 +180,35 @@ extern struct screen_capture_c_interface screen_capture_c_interface;
 
 extern int early_renderer_init(struct weston_compositor *ec,
 		struct gbm_device * gbm);
+
+typedef int (*touch_only_surface_init_func_t)(struct weston_compositor *ec);
+
+static touch_only_surface_init_func_t touch_only_surface_init_func;
+
+static int
+load_touch_only_surface_module(void)
+{
+	if (touch_only_surface_init_func)
+		return 0;
+
+	touch_only_surface_init_func =
+		(touch_only_surface_init_func_t)weston_load_module(
+			"touch-only-surface.so",
+			"touch_only_surface_init",
+			LIBWESTON_MODULEDIR);
+	if (!touch_only_surface_init_func) {
+		weston_log("Failed to load touch-only-surface.so\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static void
+unload_touch_only_surface_module(void)
+{
+	touch_only_surface_init_func = NULL;
+}
 
 static void
 drm_output_update_msc(struct drm_output *output, unsigned int seq);
@@ -714,6 +745,16 @@ finish_init(void *data)
 	if (!wl_global_create(b->compositor->wl_display, &wl_pll_interface, 1,
 			    		b->compositor, bind_pll))
 		weston_log("Error: initializing wl_pll_interface failed.\n");
+
+	/* Load touch_only_surface module at runtime and register the global object */
+	ret = load_touch_only_surface_module();
+	if (ret < 0) {
+		weston_log("Error: loading touch_only_surface module failed.\n");
+	} else {
+		ret = touch_only_surface_init_func(b->compositor);
+		if (ret < 0)
+			weston_log("Error: initializing touch_only_surface failed.\n");
+	}
 
 	if (!b->early_boot)
 		goto out;
@@ -3215,6 +3256,7 @@ drm_destroy(struct weston_backend *backend)
 	/* This will destroy all displays also */
 	if (sdm_service)
 		sdm_service->DestroyCore();
+	unload_touch_only_surface_module();
 	if(b->early_boot)
 		early_drm_display_deinit(true, b->drm.fd);
 
