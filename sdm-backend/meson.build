@@ -27,6 +27,7 @@ srcs_screen_capture = [
 	'screen-capture.c',
 	screen_capture_protocol_c,
 	screen_capture_server_protocol_h,
+	gbm_buffer_backend_server_protocol_h,
 ]
 
 deps_screen_capture = [
