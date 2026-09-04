@@ -49,6 +49,31 @@ dep_screen_capture = declare_dependency(
 	link_with: lib_screen_capture,
 	include_directories: include_directories('.')
 )
+
+srcs_touch_only_surface = [
+	'touch-only-surface.c',
+	touch_only_surface_protocol_c,
+	touch_only_surface_server_protocol_h,
+]
+
+deps_touch_only_surface = [
+	dep_libweston_private,
+]
+
+lib_touch_only_surface = shared_library(
+	'touch-only-surface',
+	srcs_touch_only_surface,
+	include_directories: common_inc,
+	dependencies: deps_touch_only_surface,
+	name_prefix: '',
+	install: true,
+	install_dir: dir_module_libweston
+)
+dep_touch_only_surface = declare_dependency(
+	link_with: lib_touch_only_surface,
+	include_directories: include_directories('.')
+)
+
 srcs_drm = [
         'compositor-sdm.c',
         'drm-service/drm_display.cpp',
@@ -145,4 +170,3 @@ if get_option('enable-pm-snservice')
 		install_dir: dir_module_weston
 	)
 endif
-

@@ -1,0 +1,33 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Assign GVM Touch Proxy virtual touch devices to a dedicated seat.
+#
+# Install:
+#   sudo cp 99-gvm-touch-proxy-seat.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+#
+# Verification:
+#   /usr/libexec/libinput/libinput-list-devices
+#   udevadm info -q property -n /dev/input/eventX
+#
+# Expected result:
+#   Devices named "GVM Touch *" are tagged with ID_SEAT=seat-gvm so they are
+#   isolated from the default seat0 input path.
+#   Shared-port touch devices also get stable symlinks for per-panel access.
+
+# SUBSYSTEM=="input"      : match only input subsystem devices
+# KERNEL=="event*"        : match /dev/input/event* nodes only
+# ATTRS{name}=="GVM Touch *" : match uinput devices created by gvm-touch-proxy; the name is
+#                              "GVM Touch <port>" where <port> is the port name configured in
+#                              shared_touch.ini (e.g. "GVM Touch DP0S078151")
+# ENV{ID_SEAT}="seat-gvm" : assign to a dedicated seat so these GVM virtual touch devices
+#                           are isolated from seat0 and not seen by the host Weston session
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch *", ENV{ID_SEAT}="seat-gvm"
+
+# SYMLINK+="input/gvm-touch-la"  : create a stable symlink /dev/input/gvm-touch-la
+#                                   because /dev/input/eventX number can change across reboots;
+#                                   port names must match the shared_touch.ini configuration
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch DP0S078151", SYMLINK+="input/gvm-touch-la"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch DP1S078152", SYMLINK+="input/gvm-touch-la2"
