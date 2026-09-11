@@ -1,0 +1,38 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Assign GVM Touch Proxy virtual touch devices to a dedicated seat.
+#
+# Install:
+#   sudo cp 99-gvm-touch-proxy-seat.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+#
+# Verification:
+#   /usr/libexec/libinput/libinput-list-devices
+#   udevadm info -q property -n /dev/input/eventX
+#
+# Expected result:
+#   Devices named "GVM Touch *" are tagged with ID_SEAT=seat-gvm so they are
+#   isolated from the default seat0 input path.
+#   Shared-port touch devices also get stable symlinks for per-panel access.
+
+# SUBSYSTEM=="input"      : match only input subsystem devices
+# KERNEL=="event*"        : match /dev/input/event* nodes only
+# ATTRS{name}=="GVM Touch *" : match uinput devices created by gvm-touch-proxy; the name is
+#                              "GVM Touch dev<device_id>-disp<display_id>", built from the
+#                              device_id/display_id values configured in shared_touch.ini
+#                              (e.g. "GVM Touch dev0-disp1")
+# ENV{ID_SEAT}="seat-gvm" : assign to a dedicated seat so these GVM virtual touch devices
+#                           are isolated from seat0 and not seen by the host Weston session
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch *", ENV{ID_SEAT}="seat-gvm"
+
+# SYMLINK+="input/gvm-touch-la*"  : create stable symlinks because /dev/input/eventX
+#                                   numbers can change across reboots; device_id/display_id
+#                                   must match the values in shared_touch.ini
+# Board: adp_star_sda8255 (sa8255-ivi), WFD_CLIENT_TYPE_LA_GVM (0x7815) ports:
+#   DSI0 (eQDIDeviceID=0, eQDIDisplayID=1), DSI1 (eQDIDeviceID=0, eQDIDisplayID=2),
+#   eDP1 (eQDIDeviceID=0, eQDIDisplayID=3)
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch dev0-disp1", SYMLINK+="input/gvm-touch-la"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch dev0-disp2", SYMLINK+="input/gvm-touch-la2"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="GVM Touch dev0-disp3", SYMLINK+="input/gvm-touch-la3"
