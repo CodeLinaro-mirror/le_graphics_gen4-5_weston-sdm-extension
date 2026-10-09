@@ -1038,6 +1038,7 @@ TEST(touch_cancel_resets_active_touches)
 TEST(touch_route_is_bound_to_originating_port)
 {
 	struct client_state state;
+	struct touch_route *found_route = NULL;
 	int fd0;
 	int fd1;
 	int surface0 = 1;
@@ -1060,8 +1061,9 @@ TEST(touch_route_is_bound_to_originating_port)
 
 	EXPECT_EQ_INT(1, state.ports[0].active_touches, "port0_active_1");
 	EXPECT_EQ_INT(0, state.ports[1].active_touches, "port1_active_0");
-	EXPECT_TRUE(find_touch_route_by_id(&state, &test_seat, 7) != NULL, "route_created");
-	EXPECT_TRUE(find_touch_route_by_id(&state, &test_seat, 7)->port == &state.ports[0],
+	found_route = find_touch_route_by_id(&state, &test_seat, 7);
+	EXPECT_TRUE(found_route != NULL, "route_created");
+	EXPECT_TRUE(found_route && found_route->port == &state.ports[0],
 		    "route_points_port0");
 
 	touch_motion(&test_seat, NULL, 0,
