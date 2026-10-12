@@ -1,0 +1,23 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Assign PVM touch monitor virtual touch devices to seat0.
+#
+# These uinput devices are created by pvm-touch-monitor with name
+# "host touch monitor<N>" (vendor=0x1234, product=0x0001+N).
+# They should land on seat0 so Weston picks them up as normal touch input.
+#
+# Install:
+#   sudo cp 99-pvm-touch-monitor.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+
+# NOTE: These are example rules. Modify them to match your actual hardware and seat topology.
+
+# SUBSYSTEM=="input"             : match only input subsystem devices
+# KERNEL=="event*"               : match /dev/input/event* nodes only
+# ATTRS{name}=="host touch monitor*" : match uinput devices created by pvm-touch-monitor
+#                                      (name format: "host touch monitor<N>", N=0,1,...)
+# ENV{ID_SEAT}="seat0"           : assign to seat0 so the host Weston session sees these
+#                                  devices as normal touch input
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="host touch monitor*", ENV{ID_SEAT}="seat0"
