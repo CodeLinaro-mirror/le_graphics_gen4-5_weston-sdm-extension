@@ -325,7 +325,7 @@ is_screen_capture_buffer(struct weston_buffer *buffer)
 static bool
 is_screen_capture_view(struct weston_view *ev)
 {
-	if (ev->is_capture_view)
+	if (ev && ev->is_capture_view)
 		return true;
 
 	if (ev && ev->surface && ev->surface->buffer_ref.buffer) {
