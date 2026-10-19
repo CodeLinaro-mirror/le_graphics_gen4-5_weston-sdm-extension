@@ -47,8 +47,8 @@
 * CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 *
-* Changes from Qualcomm Innovation Center are provided under the following license:
-* Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+* Changes from Qualcomm Technologies, Inc. are provided under the following license:
+* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 * SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
@@ -92,6 +92,8 @@
 #include <libweston-private/launcher-util.h>
 #include <libweston-private/pixman-renderer.h>
 
+#include "touch-only-surface-server-protocol.h"
+
 #include <gbm-buffer-backend.h>
 #include <screen-capture.h>
 #include "../sdm-service/sdm_display_connect.h"
@@ -103,6 +105,7 @@
 #include "gbm-buffer-backend-server-protocol.h"
 #include "bootkpi/logging.h"
 #include "gbm-buffer-backend.h"
+#include "sdm-input-control-api.h"
 
 #if defined(ENABLE_RT_SCHEDULE)
 #include "amss/compresmgr_client_api.h"
@@ -178,6 +181,35 @@ extern struct screen_capture_c_interface screen_capture_c_interface;
 
 extern int early_renderer_init(struct weston_compositor *ec,
 		struct gbm_device * gbm);
+
+typedef int (*touch_only_surface_init_func_t)(struct weston_compositor *ec);
+
+static touch_only_surface_init_func_t touch_only_surface_init_func;
+
+static int
+load_touch_only_surface_module(void)
+{
+	if (touch_only_surface_init_func)
+		return 0;
+
+	touch_only_surface_init_func =
+		(touch_only_surface_init_func_t)weston_load_module(
+			"touch-only-surface.so",
+			"touch_only_surface_init",
+			LIBWESTON_MODULEDIR);
+	if (!touch_only_surface_init_func) {
+		weston_log("Failed to load touch-only-surface.so\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static void
+unload_touch_only_surface_module(void)
+{
+	touch_only_surface_init_func = NULL;
+}
 
 static void
 drm_output_update_msc(struct drm_output *output, unsigned int seq);
@@ -714,6 +746,16 @@ finish_init(void *data)
 	if (!wl_global_create(b->compositor->wl_display, &wl_pll_interface, 1,
 			    		b->compositor, bind_pll))
 		weston_log("Error: initializing wl_pll_interface failed.\n");
+
+	/* Load touch_only_surface module at runtime and register the global object */
+	ret = load_touch_only_surface_module();
+	if (ret < 0) {
+		weston_log("Error: loading touch_only_surface module failed.\n");
+	} else {
+		ret = touch_only_surface_init_func(b->compositor);
+		if (ret < 0)
+			weston_log("Error: initializing touch_only_surface failed.\n");
+	}
 
 	if (!b->early_boot)
 		goto out;
@@ -3213,6 +3255,7 @@ drm_destroy(struct weston_backend *backend)
 	/* This will destroy all displays also */
 	if (sdm_service)
 		sdm_service->DestroyCore();
+	unload_touch_only_surface_module();
 	if(b->early_boot)
 		early_drm_display_deinit(true);
 
@@ -3299,6 +3342,37 @@ session_notify(struct wl_listener *listener, void *data)
 
 	};
 }
+
+/*
+ * Suspend/resume the backend input source so that during sleep no input event
+ * can reach libweston and wake it ahead of owfds; only the PM-notify path may
+ * wake weston. Published to the PM plugin via the plugin-registry vtable
+ * sdm_input_control_api (registered in drm_backend_create()).
+ *
+ * udev_input_disable()/enable() are idempotent (guarded by input->suspended).
+ */
+static void
+sdm_backend_suspend_input(struct weston_compositor *compositor)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+
+	if (b)
+		udev_input_disable(&b->input);
+}
+
+static void
+sdm_backend_resume_input(struct weston_compositor *compositor)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+
+	if (b)
+		udev_input_enable(&b->input);
+}
+
+static const struct sdm_input_control_api sdm_input_control_api_impl = {
+	.suspend_input = sdm_backend_suspend_input,
+	.resume_input = sdm_backend_resume_input,
+};
 
 static void
 switch_vt_binding(struct weston_keyboard *keyboard, const struct timespec *time,
@@ -3797,6 +3871,13 @@ drm_backend_create(struct weston_compositor *compositor,
 		weston_log("Failed to register output API.\n");
 		goto err_sprite;
 	}
+
+	/* Register the input-control vtable so the PM plugin can suspend/resume
+	 * the backend input source. Non-fatal on failure. */
+	if (weston_plugin_api_register(compositor, SDM_INPUT_CONTROL_API_NAME,
+				       &sdm_input_control_api_impl,
+				       sizeof(sdm_input_control_api_impl)) < 0)
+		weston_log("Failed to register sdm input control API.\n");
 
 	#ifdef ENABLE_EARLY_BOOT
 	b->early_boot = true;
