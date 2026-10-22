@@ -503,6 +503,7 @@ parse_xml_config(const char *filename, struct client_state *state)
 {
 	xmlDoc *doc = xmlReadFile(filename, NULL, 0);
 	xmlNode *root;
+	bool ok = true;
 
 	if (!doc) {
 		GTP_LOG_ERROR(state, GVM_TOUCH_LOG_PREFIX "Error: Cannot parse %s\n", filename);
@@ -571,20 +572,65 @@ parse_xml_config(const char *filename, struct client_state *state)
 							continue;
 
 						cport = xmlGetProp(attrib, (xmlChar *) "cPortName");
-						dnode = xmlGetProp(attrib, (xmlChar *) "uDisplayNode");
-						zbase = xmlGetProp(attrib, (xmlChar *) "eZOrderBase");
-						zsize = xmlGetProp(attrib, (xmlChar *) "uZOrderSize");
-						device = xmlGetProp(attrib, (xmlChar *) "eQDIDeviceID");
-						display = xmlGetProp(attrib, (xmlChar *) "eQDIDisplayID");
-
 						if (!cport)
 							continue;
 
+						device = attrib->parent ? xmlGetProp(attrib->parent, (xmlChar *) "eQDIDeviceID") : NULL;
+						if (!device) {
+							GTP_LOG_ERROR(state,
+								     GVM_TOUCH_LOG_PREFIX
+								     ">>> ERROR: eQDIDeviceID not found in WFDPort for port %s\n",
+								     (char *) cport);
+							xmlFree(cport);
+							ok = false;
+							continue;
+						}
+
+						display = xmlGetProp(attrib, (xmlChar *) "eQDIDisplayID");
+						if (!display) {
+							GTP_LOG_ERROR(state,
+								     GVM_TOUCH_LOG_PREFIX
+								     ">>> ERROR: eQDIDisplayID not found in PortAttribs for port %s\n",
+								     (char *) cport);
+							xmlFree(cport);
+							xmlFree(device);
+							ok = false;
+							continue;
+						}
+
+						/* optional: defaults to 0 if absent */
+						dnode = xmlGetProp(attrib, (xmlChar *) "uDisplayNode");
+						zbase = xmlGetProp(attrib, (xmlChar *) "eZOrderBase");
+						if (!zbase) {
+							GTP_LOG_ERROR(state,
+								     GVM_TOUCH_LOG_PREFIX
+								     ">>> ERROR: eZOrderBase not found in PortAttribs for port %s\n",
+								     (char *) cport);
+							xmlFree(cport);
+							xmlFree(device);
+							xmlFree(display);
+							ok = false;
+							continue;
+						}
+						zsize = xmlGetProp(attrib, (xmlChar *) "uZOrderSize");
+						if (!zsize) {
+							GTP_LOG_ERROR(state,
+								     GVM_TOUCH_LOG_PREFIX
+								     ">>> ERROR: uZOrderSize not found in PortAttribs for port %s\n",
+								     (char *) cport);
+							xmlFree(cport);
+							xmlFree(device);
+							xmlFree(display);
+							xmlFree(zbase);
+							ok = false;
+							continue;
+						}
+
 						display_node = dnode ? atoi((char *) dnode) : 0;
-						device_id = device ? (uint32_t) atoi((char *) device) : 0;
-						display_id = display ? (uint32_t) atoi((char *) display) : 0;
-						zorder_base = zbase ? atoi((char *) zbase) : 0;
-						zorder_size = zsize ? atoi((char *) zsize) : 1;
+						device_id = (uint32_t) atoi((char *) device);
+						display_id = (uint32_t) atoi((char *) display);
+						zorder_base = (uint32_t) atoi((char *) zbase);
+						zorder_size = (uint32_t) atoi((char *) zsize);
 
 						if (is_host) {
 							if (state->port_count < MAX_PORTS) {
@@ -635,18 +681,15 @@ parse_xml_config(const char *filename, struct client_state *state)
 							}
 						}
 
-						if (cport)
-							xmlFree(cport);
+						xmlFree(cport);
+						xmlFree(device);
+						xmlFree(display);
 						if (dnode)
 							xmlFree(dnode);
 						if (zbase)
 							xmlFree(zbase);
 						if (zsize)
 							xmlFree(zsize);
-						if (device)
-							xmlFree(device);
-						if (display)
-							xmlFree(display);
 					}
 				}
 			}
@@ -722,10 +765,8 @@ parse_xml_config(const char *filename, struct client_state *state)
 	}
 
 	xmlFreeDoc(doc);
-	return true;
+	return ok;
 }
-
-/* --- Link shared ports to host ports --- */
 void
 gtp_link_ports(struct client_state *state)
 {
@@ -1364,6 +1405,12 @@ PortInfo *
 find_port_by_surface(struct client_state *state, struct wl_surface *surface)
 {
 	int i;
+
+	if (!state) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: find_port_by_surface: NULL state\n");
+		return NULL;
+	}
 
 	for (i = 0; i < state->port_count; i++) {
 		if (state->ports[i].surface == surface)
@@ -2121,6 +2168,12 @@ touch_cancel(void *data, struct wl_touch *wl_touch)
 	struct client_state *state = seat ? seat->state : NULL;
 	int i;
 	(void) wl_touch;
+
+	if (!state) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: touch_cancel: NULL state\n");
+		return;
+	}
 
 	for (i = 0; i < MAX_TOUCH_SLOTS; i++) {
 		struct touch_route *route = &state->touch_routes[i];
@@ -3058,9 +3111,17 @@ xdg_surface_handle_configure(void *data, struct xdg_surface *xdg_surface,
 			      uint32_t serial)
 {
 	PortInfo *port = data;
-	struct client_state *state = port ? port->state_ref : NULL;
+	struct client_state *state = NULL;
 
 	xdg_surface_ack_configure(xdg_surface, serial);
+
+	if (!port) {
+		GTP_LOG_ERROR(NULL, GVM_TOUCH_LOG_PREFIX
+			      "Error: xdg_surface configure: NULL port\n");
+		return;
+	}
+
+	state = port->state_ref;
 
 	if (!port->xdg_configured) {
 		port->xdg_configured = true;

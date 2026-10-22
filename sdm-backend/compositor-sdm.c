@@ -105,6 +105,7 @@
 #include "gbm-buffer-backend-server-protocol.h"
 #include "bootkpi/logging.h"
 #include "gbm-buffer-backend.h"
+#include "sdm-input-control-api.h"
 
 #if defined(ENABLE_RT_SCHEDULE)
 #include "amss/compresmgr_client_api.h"
@@ -3344,6 +3345,37 @@ session_notify(struct wl_listener *listener, void *data)
 	};
 }
 
+/*
+ * Suspend/resume the backend input source so that during sleep no input event
+ * can reach libweston and wake it ahead of owfds; only the PM-notify path may
+ * wake weston. Published to the PM plugin via the plugin-registry vtable
+ * sdm_input_control_api (registered in drm_backend_create()).
+ *
+ * udev_input_disable()/enable() are idempotent (guarded by input->suspended).
+ */
+static void
+sdm_backend_suspend_input(struct weston_compositor *compositor)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+
+	if (b)
+		udev_input_disable(&b->input);
+}
+
+static void
+sdm_backend_resume_input(struct weston_compositor *compositor)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+
+	if (b)
+		udev_input_enable(&b->input);
+}
+
+static const struct sdm_input_control_api sdm_input_control_api_impl = {
+	.suspend_input = sdm_backend_suspend_input,
+	.resume_input = sdm_backend_resume_input,
+};
+
 static void
 switch_vt_binding(struct weston_keyboard *keyboard, const struct timespec *time,
 		uint32_t key, void *data)
@@ -3578,11 +3610,6 @@ struct full_init_param {
 	const char *seat_id;
 	void (*configure_device)(struct weston_compositor *compositor,
 								 struct libinput_device *device);
-	/*
-	* If early boot is not enabled, need to return
-	* whether full init is done successfully
-	*/
-	bool success;
 };
 
 static void *full_init_main(void *arg) {
@@ -3722,8 +3749,8 @@ static void *full_init_main(void *arg) {
 
 	if (finish_init(b))
 		goto err_udev_input;
-	param->success = true;
-	return NULL;
+	free(param);
+	return b;
 
 err_udev_input:
 	udev_input_destroy(&b->input);
@@ -3742,10 +3769,7 @@ err_sdm_core:
 err_udev:
 	udev_unref(b->udev);
 err_base:
-	if (b->early_boot)
-		free(param);
-	else
-		param->success = false;
+	free(param);
 	return NULL;
 }
 
@@ -3845,6 +3869,13 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_sprite;
 	}
 
+	/* Register the input-control vtable so the PM plugin can suspend/resume
+	 * the backend input source. Non-fatal on failure. */
+	if (weston_plugin_api_register(compositor, SDM_INPUT_CONTROL_API_NAME,
+				       &sdm_input_control_api_impl,
+				       sizeof(sdm_input_control_api_impl)) < 0)
+		weston_log("Failed to register sdm input control API.\n");
+
 	#ifdef ENABLE_EARLY_BOOT
 	b->early_boot = true;
 	weston_log("weston early boot enabled\n");
@@ -3914,12 +3945,9 @@ drm_backend_create(struct weston_compositor *compositor,
 #endif
 	} else {
 		/* If early boot is disabled, do full backend initialization directly. */
-		full_init_main(full_init_param);
-		if (full_init_param->success) {
-			free(full_init_param);
+		if (full_init_main(full_init_param)) {
 			return b;
 		} else {
-			free(full_init_param);
 			wl_list_for_each_safe(base, next, &compositor->head_list, compositor_link) {
 				drm_display_destroy(to_drm_head(base));
 				drm_head_destroy(to_drm_head(base));
